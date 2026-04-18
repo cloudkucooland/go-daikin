@@ -7,8 +7,8 @@ import (
 const base = "https://integrator-api.daikinskyport.com/v1"
 const httpTimeout = 10 * time.Second
 
-// is "circulate" 4?
 type Mode int
+
 const ModeOff Mode = 0
 const ModeHeat Mode = 1
 const ModeCool Mode = 2

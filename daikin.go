@@ -7,6 +7,7 @@ import (
 	"fmt"
 	// "log/slog"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -23,6 +24,8 @@ type Client struct {
 	APIKey       string // Integrator Token (from Home Integration menu)
 	AccessToken  AccessToken
 	Devices      []Device
+	httpClient   *http.Client
+	mu           sync.Mutex
 }
 
 type Location struct {
@@ -30,14 +33,14 @@ type Location struct {
 	Devices      []Device `json:"devices"`
 }
 
-func New(email, developerKey, apiKey string) (*Client, error) {
+func New(ctx context.Context, email, developerKey, apiKey string) (*Client, error) {
 	d := &Client{
 		Email:        email,
 		DeveloperKey: developerKey,
 		APIKey:       apiKey,
 	}
 
-	ctx := context.Background()
+	d.httpClient = &http.Client{Timeout: httpTimeout}
 
 	d.refreshToken(ctx)
 	// slog.Info("Daikin authenticated", "expires_at", d.AccessToken.ExpiresAt)
@@ -50,11 +53,15 @@ func New(email, developerKey, apiKey string) (*Client, error) {
 
 // GetToken returns the current token, or fetches a new one if it's expired
 func (d *Client) GetToken(ctx context.Context) (string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	// Give ourselves a 60-second buffer so we don't expire mid-request
 	if time.Now().Add(60 * time.Second).Before(d.AccessToken.ExpiresAt) {
 		return d.AccessToken.Value, nil
 	}
 	d.refreshToken(ctx)
+
 	// slog.Info("Daikin token renewed", "expires_at", d.AccessToken.ExpiresAt)
 	return d.AccessToken.Value, nil
 }
@@ -107,10 +114,9 @@ func (d *Client) doRequest(ctx context.Context, method, path string, body interf
 	req.Header["x-api-key"] = []string{d.APIKey}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
-	// req.Header.Set("User-Agent", "DeepCool/1.0")
+	req.Header.Set("User-Agent", "cloudkucooland-go-daikin/1.0") // for 1.0 -- allow app to overwr te this
 
-	client := &http.Client{Timeout: httpTimeout}
-	return client.Do(req)
+	return d.httpClient.Do(req)
 }
 
 func (d *Client) refreshToken(ctx context.Context) error {
@@ -134,8 +140,7 @@ func (d *Client) refreshToken(ctx context.Context) error {
 	req.Header["x-api-key"] = []string{d.APIKey}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: httpTimeout}
-	res, err := client.Do(req)
+	res, err := d.httpClient.Do(req)
 	if err != nil {
 		return err
 	}

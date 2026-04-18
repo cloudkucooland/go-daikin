@@ -1,7 +1,6 @@
 package daikin
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,11 +13,11 @@ type Device struct {
 	Name            string `json:"name"`
 	Model           string `json:"model"`
 	FirmwareVersion string `json:"firmwareVersion"`
-	client			*Client
+	client          *Client
 }
 
 type MSPPayload struct {
-	Mode         Mode     `json:"mode"` 
+	Mode         Mode    `json:"mode"`
 	HeatSetpoint float64 `json:"heatSetpoint"`
 	CoolSetpoint float64 `json:"coolSetpoint"`
 }
@@ -42,19 +41,24 @@ type Info struct {
 	OutdoorHumidity     int     `json:"humOutdoor"`
 	ScheduleEnabled     bool    `json:"scheduleEnabled"`
 	GeofencingEnabled   bool    `json:"geofencingEnabled"`
+	CoolNextPeriod      int     `json:"coolnextperiod"`
+	ActiveError         string  `json:"activeerror"`
+	Humidification      string  `json:"humidification"`
+	DehumSetpoint       int     `json:"dehumSetpoint"`
+	DRIsActive          bool    `json:"drIsActive"`
+	DROffsetDegree      float64 `json:"drOffsetDegree"`
 }
 
 func (d *Device) SetTemps(ctx context.Context, mode Mode, heat, cool float64) error {
 	url := fmt.Sprintf("/devices/%s/msp", d.ID)
 
-	payload := MSPPayload{
+	body := MSPPayload{
 		Mode:         mode,
 		HeatSetpoint: heat,
 		CoolSetpoint: cool,
 	}
 
-	body, _ := json.Marshal(payload)
-	res, err := d.client.doRequest(ctx, "PUT", url, bytes.NewBuffer(body))
+	res, err := d.client.doRequest(ctx, "PUT", url, body)
 	if err != nil {
 		return err
 	}
@@ -70,13 +74,12 @@ func (d *Device) SetTemps(ctx context.Context, mode Mode, heat, cool float64) er
 
 func (d *Device) SetModeSchedule(ctx context.Context) error {
 	url := fmt.Sprintf("/devices/%s/schedule", d.ID)
-	payload := struct {
+	body := struct {
 		ScheduleEnabled bool `json:"scheduleEnabled"`
 	}{
 		ScheduleEnabled: true,
 	}
 
-	body, _ := json.Marshal(payload)
 	res, err := d.client.doRequest(ctx, "PUT", url, body)
 	if err != nil {
 		return err
@@ -106,4 +109,104 @@ func (d *Device) GetInfo(ctx context.Context) (*Info, error) {
 
 	// slog.Info("Daikin data pulled", "indoor temp", info.IndoorTemp, "indoor humidity", info.IndoorHumidity)
 	return &info, nil
+}
+
+// FAN CONTROL
+type FanPayload struct {
+	Mode      int `json:"fanMode"`      // 0: Auto, 1: On, 2: Circulate
+	Circulate int `json:"fanCirculate"` // 0: Off, 1: On
+}
+
+func (d *Device) SetFan(ctx context.Context, mode int, circulate int) error {
+	url := fmt.Sprintf("/devices/%s/fan", d.ID)
+	payload := FanPayload{
+		Mode:      mode,
+		Circulate: circulate,
+	}
+
+	res, err := d.client.doRequest(ctx, "PUT", url, payload)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("failed to set fan: %s", res.Status)
+	}
+	return nil
+}
+
+// AWAY MODE
+type AwayPayload struct {
+	AwayMode int `json:"awayMode"` // 0: Home, 1: Away
+}
+
+func (d *Device) SetAwayMode(ctx context.Context, away int) error {
+	url := fmt.Sprintf("/devices/%s/away", d.ID)
+	payload := AwayPayload{
+		AwayMode: away,
+	}
+
+	res, err := d.client.doRequest(ctx, "PUT", url, payload)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("failed to set away mode: %s", res.Status)
+	}
+	return nil
+}
+
+// DEMAND RESPONSE
+type DRPayload struct {
+	IsActive     bool    `json:"isActive"` // is this really bool? all the others are int 0/1
+	OffsetDegree float64 `json:"offsetDegree"`
+}
+
+func (d *Device) SetDemandResponse(ctx context.Context, active bool, offset float64) error {
+	url := fmt.Sprintf("/devices/%s/dr", d.ID)
+	payload := DRPayload{
+		IsActive:     active,
+		OffsetDegree: offset,
+	}
+
+	res, err := d.client.doRequest(ctx, "PUT", url, payload)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("failed to set demand response: %s", res.Status)
+	}
+	return nil
+}
+
+type DehumPayload struct {
+	DehumSetpoint int `json:"dehumSetpoint"`
+}
+
+func (d *Device) SetDehumidifySetpoint(ctx context.Context, setpoint int) error {
+	// Validation
+	if setpoint < 35 || setpoint > 80 {
+		return fmt.Errorf("dehum setpoint %d is out of range (35-80)", setpoint)
+	}
+
+	url := fmt.Sprintf("/devices/%s/dehum", d.ID)
+	payload := DehumPayload{
+		DehumSetpoint: setpoint,
+	}
+
+	res, err := d.client.doRequest(ctx, "PUT", url, payload)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
+		return fmt.Errorf("failed to set dehumidify setpoint: %s", res.Status)
+	}
+	return nil
 }

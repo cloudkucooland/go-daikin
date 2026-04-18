@@ -25,7 +25,7 @@ type MSPPayload struct {
 
 type Info struct {
 	EquipmentStatus     int     `json:"equipmentStatus"`
-	Mode                int     `json:"mode"`
+	Mode                Mode    `json:"mode"`
 	ModeLimit           int     `json:"modeLimit"`
 	ModeEMHeatAvailable bool    `json:"modeEmHeatAvailable"`
 	Fan                 int     `json:"fan"`

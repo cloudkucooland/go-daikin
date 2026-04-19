@@ -135,7 +135,7 @@ func (d *Client) doRequest(ctx context.Context, method, path string, body interf
 			return res, nil
 		default:
 			// something else, call it quits
-			return nil, fmt.Errorf("request failed %w", lastErr)
+			return nil, fmt.Errorf("request failed: http status %d", res.StatusCode)
 		}
 	}
 

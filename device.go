@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log/slog"
+	"io"
 	"net/http"
 )
 
@@ -17,39 +17,39 @@ type Device struct {
 }
 
 type MSPPayload struct {
-	Mode         Mode    `json:"mode"`
-	HeatSetpoint float64 `json:"heatSetpoint"`
-	CoolSetpoint float64 `json:"coolSetpoint"`
+	Mode         SystemMode `json:"mode"`
+	HeatSetpoint float64    `json:"heatSetpoint"`
+	CoolSetpoint float64    `json:"coolSetpoint"`
 }
 
 type Info struct {
-	EquipmentStatus     int     `json:"equipmentStatus"`
-	Mode                Mode    `json:"mode"`
-	ModeLimit           int     `json:"modeLimit"`
-	ModeEMHeatAvailable bool    `json:"modeEmHeatAvailable"`
-	Fan                 int     `json:"fan"`
-	FanCirculate        int     `json:"fanCirculate"`
-	FanCirculateSpeed   int     `json:"fanCirculateSpeed"`
-	HeatSetpoint        float64 `json:"heatSetpoint"`
-	CoolSetpoint        float64 `json:"coolSetpoint"`
-	SetPointDelta       int     `json:"setpointDelta"`
-	SetPointMinimum     float64 `json:"setpointMinimum"`
-	SetPointMaximum     float64 `json:"setpointMaximum"`
-	IndoorTemp          float64 `json:"tempIndoor"`
-	IndoorHumidity      int     `json:"humIndoor"`
-	OutdoorTemp         float64 `json:"tempOutdoor"`
-	OutdoorHumidity     int     `json:"humOutdoor"`
-	ScheduleEnabled     bool    `json:"scheduleEnabled"`
-	GeofencingEnabled   bool    `json:"geofencingEnabled"`
-	CoolNextPeriod      int     `json:"coolnextperiod"`
-	ActiveError         string  `json:"activeerror"`
-	Humidification      string  `json:"humidification"`
-	DehumSetpoint       int     `json:"dehumSetpoint"`
-	DRIsActive          bool    `json:"drIsActive"`
-	DROffsetDegree      float64 `json:"drOffsetDegree"`
+	EquipmentStatus     int        `json:"equipmentStatus"`
+	Mode                SystemMode `json:"mode"`
+	ModeLimit           int        `json:"modeLimit"`
+	ModeEMHeatAvailable bool       `json:"modeEmHeatAvailable"`
+	Fan                 FanMode    `json:"fan"`
+	FanCirculate        int        `json:"fanCirculate"`
+	FanCirculateSpeed   int        `json:"fanCirculateSpeed"`
+	HeatSetpoint        float64    `json:"heatSetpoint"`
+	CoolSetpoint        float64    `json:"coolSetpoint"`
+	SetPointDelta       int        `json:"setpointDelta"`
+	SetPointMinimum     float64    `json:"setpointMinimum"`
+	SetPointMaximum     float64    `json:"setpointMaximum"`
+	IndoorTemp          float64    `json:"tempIndoor"`
+	IndoorHumidity      int        `json:"humIndoor"`
+	OutdoorTemp         float64    `json:"tempOutdoor"`
+	OutdoorHumidity     int        `json:"humOutdoor"`
+	ScheduleEnabled     bool       `json:"scheduleEnabled"`
+	GeofencingEnabled   bool       `json:"geofencingEnabled"`
+	CoolNextPeriod      int        `json:"coolnextperiod"`
+	ActiveError         string     `json:"activeerror"`
+	Humidification      string     `json:"humidification"`
+	DehumSetpoint       int        `json:"dehumSetpoint"`
+	DRIsActive          bool       `json:"drIsActive"`
+	DROffsetDegree      float64    `json:"drOffsetDegree"`
 }
 
-func (d *Device) SetTemps(ctx context.Context, mode Mode, heat, cool float64) error {
+func (d *Device) SetTemps(ctx context.Context, mode SystemMode, heat, cool float64) error {
 	url := fmt.Sprintf("/devices/%s/msp", d.ID)
 
 	body := MSPPayload{
@@ -65,10 +65,9 @@ func (d *Device) SetTemps(ctx context.Context, mode Mode, heat, cool float64) er
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusNoContent && res.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to set auto mode: %s", res.Status)
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to set auto mode: %s: %s", res.Status, body)
 	}
-
-	slog.Info("Daikin set to deep cool", "device", d.ID, "mode", mode, "cool", cool, "heat", heat)
 	return nil
 }
 
@@ -87,10 +86,9 @@ func (d *Device) SetModeSchedule(ctx context.Context) error {
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("failed to toggle schedule: %s", res.Status)
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to set schedule mode: %s: %s", res.Status, body)
 	}
-
-	// slog.Info("Daikin set to Schedule", "device", d.ID)
 	return nil
 }
 
@@ -102,12 +100,15 @@ func (d *Device) GetInfo(ctx context.Context) (*Info, error) {
 	}
 	defer res.Body.Close()
 
+	if res.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(res.Body)
+		return nil, fmt.Errorf("failed to get device info: %s: %s", res.Status, body)
+	}
+
 	var info Info
 	if err := json.NewDecoder(res.Body).Decode(&info); err != nil {
 		return nil, fmt.Errorf("failed to decode info: %w", err)
 	}
-
-	// slog.Info("Daikin data pulled", "indoor temp", info.IndoorTemp, "indoor humidity", info.IndoorHumidity)
 	return &info, nil
 }
 
@@ -131,20 +132,21 @@ func (d *Device) SetFan(ctx context.Context, mode int, circulate int) error {
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("failed to set fan: %s", res.Status)
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to set fan mode: %s: %s", res.Status, body)
 	}
 	return nil
 }
 
 // AWAY MODE
 type AwayPayload struct {
-	AwayMode int `json:"awayMode"` // 0: Home, 1: Away
+	AwayMode AwayMode `json:"awayMode"` // 0: Home, 1: Away
 }
 
-func (d *Device) SetAwayMode(ctx context.Context, away int) error {
+func (d *Device) SetAwayMode(ctx context.Context, mode AwayMode) error {
 	url := fmt.Sprintf("/devices/%s/away", d.ID)
 	payload := AwayPayload{
-		AwayMode: away,
+		AwayMode: mode,
 	}
 
 	res, err := d.client.doRequest(ctx, "PUT", url, payload)
@@ -154,14 +156,15 @@ func (d *Device) SetAwayMode(ctx context.Context, away int) error {
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("failed to set away mode: %s", res.Status)
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to set away mode: %s: %s", res.Status, body)
 	}
 	return nil
 }
 
 // DEMAND RESPONSE
 type DRPayload struct {
-	IsActive     bool    `json:"isActive"` // is this really bool? all the others are int 0/1
+	IsActive     bool    `json:"isActive"`
 	OffsetDegree float64 `json:"offsetDegree"`
 }
 
@@ -179,7 +182,8 @@ func (d *Device) SetDemandResponse(ctx context.Context, active bool, offset floa
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("failed to set demand response: %s", res.Status)
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to set demand response: %s: %s", res.Status, body)
 	}
 	return nil
 }
@@ -206,7 +210,8 @@ func (d *Device) SetDehumidifySetpoint(ctx context.Context, setpoint int) error 
 	defer res.Body.Close()
 
 	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
-		return fmt.Errorf("failed to set dehumidify setpoint: %s", res.Status)
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to set dehumidity setpoint: %s: %s", res.Status, body)
 	}
 	return nil
 }

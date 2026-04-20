@@ -32,7 +32,7 @@ type Info struct {
 	FanCirculateSpeed   int        `json:"fanCirculateSpeed"`
 	HeatSetpoint        float64    `json:"heatSetpoint"`
 	CoolSetpoint        float64    `json:"coolSetpoint"`
-	SetPointDelta       int        `json:"setpointDelta"`
+	SetPointDelta       float64    `json:"setpointDelta"`
 	SetPointMinimum     float64    `json:"setpointMinimum"`
 	SetPointMaximum     float64    `json:"setpointMaximum"`
 	IndoorTemp          float64    `json:"tempIndoor"`

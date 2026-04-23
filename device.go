@@ -74,6 +74,27 @@ func (d *Device) SetTemps(ctx context.Context, mode SystemMode, heat, cool float
 func (d *Device) SetModeSchedule(ctx context.Context) error {
 	url := fmt.Sprintf("/devices/%s/schedule", d.ID)
 	body := struct {
+		ScheduleEnabled int `json:"schedOverride"`
+	}{
+		ScheduleEnabled: 0,
+	}
+
+	res, err := d.client.doRequest(ctx, "PUT", url, body)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
+		body, _ := io.ReadAll(res.Body)
+		return fmt.Errorf("failed to clear schedule override: %s: %s", res.Status, body)
+	}
+	return nil
+}
+
+func (d *Device) ClearScheduleOverride(ctx context.Context) error {
+	url := fmt.Sprintf("/devices/%s/schedule", d.ID)
+	body := struct {
 		ScheduleEnabled bool `json:"scheduleEnabled"`
 	}{
 		ScheduleEnabled: true,

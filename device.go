@@ -47,6 +47,7 @@ type Info struct {
 	DehumSetpoint       int        `json:"dehumSetpoint"`
 	DRIsActive          bool       `json:"drIsActive"`
 	DROffsetDegree      float64    `json:"drOffsetDegree"`
+	SchedOverride       int        `json:"schedOverride"`
 }
 
 func (d *Device) SetTemps(ctx context.Context, mode SystemMode, heat, cool float64) error {

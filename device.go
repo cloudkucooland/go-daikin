@@ -16,38 +16,33 @@ type Device struct {
 	client          *Client
 }
 
+// actual data from device: {"mode":2,"setpointMaximum":32,"equipmentStatus":5,"tempIndoor":20.6,"equipmentCommunication":0,"humIndoor":60,"fan":0,"tempOutdoor":26,"coolSetpoint":25,"heatSetpoint":20,"modeEmHeatAvailable":false,"setpointMinimum":10,"setpointDelta":2.8,"fanCirculateSpeed":2,"fanCirculate":2,"modeLimit":1,"humOutdoor":61,"geofencingEnabled":true,"scheduleEnabled":true}
+
+type Info struct {
+	Mode                   SystemMode `json:"mode"`
+	EquipmentStatus        int        `json:"equipmentStatus"`
+	IndoorTemp             float64    `json:"tempIndoor"`
+	EquipmentCommunication int        `json:"equipmentCommunication"`
+	IndoorHumidity         int        `json:"humIndoor"`
+	Fan                    FanMode    `json:"fan"`
+	OutdoorTemp            float64    `json:"tempOutdoor"`
+	CoolSetpoint           float64    `json:"coolSetpoint"`
+	HeatSetpoint           float64    `json:"heatSetpoint"`
+	ModeEMHeatAvailable    bool       `json:"modeEmHeatAvailable"`
+	SetPointMinimum        float64    `json:"setpointMinimum"`
+	SetPointDelta          float64    `json:"setpointDelta"`
+	FanCirculateSpeed      int        `json:"fanCirculateSpeed"`
+	FanCirculate           int        `json:"fanCirculate"`
+	ModeLimit              int        `json:"modeLimit"`
+	OutdoorHumidity        int        `json:"humOutdoor"`
+	GeofencingEnabled      bool       `json:"geofencingEnabled"`
+	ScheduleEnabled        bool       `json:"scheduleEnabled"`
+}
+
 type MSPPayload struct {
 	Mode         SystemMode `json:"mode"`
 	HeatSetpoint float64    `json:"heatSetpoint"`
 	CoolSetpoint float64    `json:"coolSetpoint"`
-}
-
-type Info struct {
-	EquipmentStatus     int        `json:"equipmentStatus"`
-	Mode                SystemMode `json:"mode"`
-	ModeLimit           int        `json:"modeLimit"`
-	ModeEMHeatAvailable bool       `json:"modeEmHeatAvailable"`
-	Fan                 FanMode    `json:"fan"`
-	FanCirculate        int        `json:"fanCirculate"`
-	FanCirculateSpeed   int        `json:"fanCirculateSpeed"`
-	HeatSetpoint        float64    `json:"heatSetpoint"`
-	CoolSetpoint        float64    `json:"coolSetpoint"`
-	SetPointDelta       float64    `json:"setpointDelta"`
-	SetPointMinimum     float64    `json:"setpointMinimum"`
-	SetPointMaximum     float64    `json:"setpointMaximum"`
-	IndoorTemp          float64    `json:"tempIndoor"`
-	IndoorHumidity      int        `json:"humIndoor"`
-	OutdoorTemp         float64    `json:"tempOutdoor"`
-	OutdoorHumidity     int        `json:"humOutdoor"`
-	ScheduleEnabled     bool       `json:"scheduleEnabled"`
-	GeofencingEnabled   bool       `json:"geofencingEnabled"`
-	CoolNextPeriod      int        `json:"coolnextperiod"`
-	ActiveError         string     `json:"activeerror"`
-	Humidification      string     `json:"humidification"`
-	DehumSetpoint       int        `json:"dehumSetpoint"`
-	DRIsActive          bool       `json:"drIsActive"`
-	DROffsetDegree      float64    `json:"drOffsetDegree"`
-	SchedOverride       int        `json:"schedOverride"`
 }
 
 func (d *Device) SetTemps(ctx context.Context, mode SystemMode, heat, cool float64) error {
@@ -72,33 +67,12 @@ func (d *Device) SetTemps(ctx context.Context, mode SystemMode, heat, cool float
 	return nil
 }
 
-func (d *Device) SetModeSchedule(ctx context.Context) error {
-	url := fmt.Sprintf("/devices/%s/schedule", d.ID)
-	body := struct {
-		ScheduleEnabled int `json:"schedOverride"`
-	}{
-		ScheduleEnabled: 0,
-	}
-
-	res, err := d.client.doRequest(ctx, "PUT", url, body)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("failed to clear schedule override: %s: %s", res.Status, body)
-	}
-	return nil
-}
-
-func (d *Device) ClearScheduleOverride(ctx context.Context) error {
+func (d *Device) SetModeSchedule(ctx context.Context, enabled bool) error {
 	url := fmt.Sprintf("/devices/%s/schedule", d.ID)
 	body := struct {
 		ScheduleEnabled bool `json:"scheduleEnabled"`
 	}{
-		ScheduleEnabled: true,
+		ScheduleEnabled: enabled,
 	}
 
 	res, err := d.client.doRequest(ctx, "PUT", url, body)
@@ -136,15 +110,15 @@ func (d *Device) GetInfo(ctx context.Context) (*Info, error) {
 
 // FAN CONTROL
 type FanPayload struct {
-	Mode      int `json:"fanMode"`      // 0: Auto, 1: On, 2: Circulate
-	Circulate int `json:"fanCirculate"` // 0: Off, 1: On
+	Circulate int `json:"fanCirculate"`      // 0: Off, 1: On, 2: schedule
+	Speed     int `json:"fanCirculateSpeed"` // 0 low, 1 medium, 2 high
 }
 
-func (d *Device) SetFan(ctx context.Context, mode int, circulate int) error {
+func (d *Device) SetFan(ctx context.Context, circulate int, speed int) error {
 	url := fmt.Sprintf("/devices/%s/fan", d.ID)
 	payload := FanPayload{
-		Mode:      mode,
 		Circulate: circulate,
+		Speed:     speed,
 	}
 
 	res, err := d.client.doRequest(ctx, "PUT", url, payload)
@@ -156,84 +130,6 @@ func (d *Device) SetFan(ctx context.Context, mode int, circulate int) error {
 	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
 		body, _ := io.ReadAll(res.Body)
 		return fmt.Errorf("failed to set fan mode: %s: %s", res.Status, body)
-	}
-	return nil
-}
-
-// AWAY MODE
-type AwayPayload struct {
-	AwayMode AwayMode `json:"awayMode"` // 0: Home, 1: Away
-}
-
-func (d *Device) SetAwayMode(ctx context.Context, mode AwayMode) error {
-	url := fmt.Sprintf("/devices/%s/away", d.ID)
-	payload := AwayPayload{
-		AwayMode: mode,
-	}
-
-	res, err := d.client.doRequest(ctx, "PUT", url, payload)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("failed to set away mode: %s: %s", res.Status, body)
-	}
-	return nil
-}
-
-// DEMAND RESPONSE
-type DRPayload struct {
-	IsActive     bool    `json:"isActive"`
-	OffsetDegree float64 `json:"offsetDegree"`
-}
-
-func (d *Device) SetDemandResponse(ctx context.Context, active bool, offset float64) error {
-	url := fmt.Sprintf("/devices/%s/dr", d.ID)
-	payload := DRPayload{
-		IsActive:     active,
-		OffsetDegree: offset,
-	}
-
-	res, err := d.client.doRequest(ctx, "PUT", url, payload)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("failed to set demand response: %s: %s", res.Status, body)
-	}
-	return nil
-}
-
-type DehumPayload struct {
-	DehumSetpoint int `json:"dehumSetpoint"`
-}
-
-func (d *Device) SetDehumidifySetpoint(ctx context.Context, setpoint int) error {
-	// Validation
-	if setpoint < 35 || setpoint > 80 {
-		return fmt.Errorf("dehum setpoint %d is out of range (35-80)", setpoint)
-	}
-
-	url := fmt.Sprintf("/devices/%s/dehum", d.ID)
-	payload := DehumPayload{
-		DehumSetpoint: setpoint,
-	}
-
-	res, err := d.client.doRequest(ctx, "PUT", url, payload)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(res.Body)
-		return fmt.Errorf("failed to set dehumidity setpoint: %s: %s", res.Status, body)
 	}
 	return nil
 }

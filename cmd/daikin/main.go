@@ -46,21 +46,12 @@ func main() {
 			},
 			{
 				Name:  "schedule",
-				Usage: "Revert device to cloud schedule",
+				Usage: "Enable or disable device's schedule",
 				Flags: []cli.Flag{
 					&cli.StringFlag{Name: "id", Usage: "Device ID"},
+					&cli.BoolFlag{Name: "on", Required: true, Usage: "Enable/Disable Schedule"},
 				},
 				Action: setSchedule,
-			},
-			{
-				Name:  "dr",
-				Usage: "Set Demand Response offset",
-				Flags: []cli.Flag{
-					&cli.StringFlag{Name: "id", Usage: "Device ID"},
-					&cli.FloatFlag{Name: "offset", Value: 0, Usage: "Degree offset (C)"},
-					&cli.BoolFlag{Name: "on", Value: false, Usage: "Enable/Disable DR"},
-				},
-				Action: setDR,
 			},
 		},
 	}
@@ -147,19 +138,7 @@ func setSchedule(ctx context.Context, cmd *cli.Command) error {
 		return err
 	}
 
-	fmt.Printf("Reverting %s to schedule...\n", dev.Name)
-	return dev.SetModeSchedule(ctx)
-}
-
-func setDR(ctx context.Context, cmd *cli.Command) error {
-	_, dev, err := getClientAndDevice(ctx, cmd.String("id"))
-	if err != nil {
-		return err
-	}
-
-	active := cmd.Bool("on")
-	offset := cmd.Float("offset")
-
-	fmt.Printf("Setting Demand Response on %s: active=%v, offset=%.1f\n", dev.Name, active, offset)
-	return dev.SetDemandResponse(ctx, active, offset)
+	on := cmd.Bool("on")
+	fmt.Printf("Setting %s schedule %t\n", dev.Name, on)
+	return dev.SetModeSchedule(ctx, on)
 }
